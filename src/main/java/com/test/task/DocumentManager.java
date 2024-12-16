@@ -4,9 +4,8 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.Instant;
-import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
+import java.util.function.Predicate;
 
 /**
  * For implement this task focus on clear code, and make this solution as simple readable as possible
@@ -19,6 +18,9 @@ import java.util.Optional;
  */
 public class DocumentManager {
 
+    private final HashMap<String, Integer> storedDocumentsIndexesById = new HashMap<>();
+    private final ArrayList<Document> storedDocuments = new ArrayList<>();
+
     /**
      * Implementation of this method should upsert the document to your storage
      * And generate unique id if it does not exist, don't change [created] field
@@ -27,8 +29,23 @@ public class DocumentManager {
      * @return saved document
      */
     public Document save(Document document) {
+        if (document.getCreated() == null) {
+            document.setCreated(Instant.now());
+        }
 
-        return null;
+        if (storedDocumentsIndexesById.containsKey(document.getId())) {
+            int index = storedDocumentsIndexesById.get(document.getId());
+            storedDocuments.set(index, document);
+        } else {
+            String newId = UUID.randomUUID().toString();
+            document.setId(newId);
+
+            int index = storedDocuments.size();
+            storedDocumentsIndexesById.put(newId, index);
+
+            storedDocuments.add(document);
+        }
+        return document;
     }
 
     /**
@@ -38,8 +55,9 @@ public class DocumentManager {
      * @return list matched documents
      */
     public List<Document> search(SearchRequest request) {
+        Predicate<? super Document> docFilter =doc -> isDocumentRequested(request, doc);
 
-        return Collections.emptyList();
+        return storedDocuments.stream().filter(docFilter).toList();
     }
 
     /**
@@ -49,8 +67,32 @@ public class DocumentManager {
      * @return optional document
      */
     public Optional<Document> findById(String id) {
+        if (!storedDocumentsIndexesById.containsKey(id)) return Optional.empty();
 
-        return Optional.empty();
+        int index = storedDocumentsIndexesById.get(id);
+        return Optional.ofNullable(storedDocuments.get(index));
+    }
+
+    private Boolean isDocumentRequested(SearchRequest request, Document document) {
+        if (request.titlePrefixes != null && !request.titlePrefixes.isEmpty()) {
+            boolean prefixesMatch = request.titlePrefixes.stream().anyMatch(pref -> document.getTitle().startsWith(pref));
+            if (!prefixesMatch) return false;
+        }
+
+        if (request.containsContents != null && !request.containsContents.isEmpty()) {
+            boolean contentsMatch = request.containsContents.stream().allMatch(con -> document.getContent().contains(con));
+            if (!contentsMatch) return false;
+        }
+
+        if (request.authorIds != null && !request.authorIds.isEmpty()) {
+            boolean authorMatch = request.authorIds.stream().allMatch(id -> Objects.equals(document.author.id, id));
+            if (!authorMatch) return false;
+        }
+
+        if (request.createdFrom != null && document.created.isBefore(request.createdFrom)) return false;
+        if (request.createdTo != null && document.created.isAfter(request.createdTo)) return false;
+
+        return true;
     }
 
     @Data
